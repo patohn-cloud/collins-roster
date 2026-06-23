@@ -83,35 +83,17 @@ def load_roster_data():
         ('Fri 31', ['Martin T.'], ['Paul F.'], 'Relief needed')
     ]
     
-    days_data = []
+    # Crear diccionario para búsqueda rápida
+    day_info = {}
     for day, sleepovers, longshifts, status in mapping_raw:
-        # Sleepovers
-        for staff_name in sleepovers:
-            # Encontrar con quién trabaja (otros sleepovers + longshifts)
-            coworkers = [s for s in sleepovers if s != staff_name] + longshifts
-            days_data.append({
-                'date': day,
-                'day_num': int(day.split()[1]),
-                'staff': staff_name,
-                'shift_type': 'Sleepover',
-                'status': status,
-                'coworkers': ', '.join(coworkers) if coworkers else 'Solo'
-            })
-        # Longshifts
-        for staff_name in longshifts:
-            coworkers = sleepovers + [s for s in longshifts if s != staff_name]
-            days_data.append({
-                'date': day,
-                'day_num': int(day.split()[1]),
-                'staff': staff_name,
-                'shift_type': 'Longshift',
-                'status': status,
-                'coworkers': ', '.join(coworkers) if coworkers else 'Solo'
-            })
+        day_info[day] = {
+            'sleepovers': sleepovers,
+            'longshifts': longshifts,
+            'status': status,
+            'all_staff': sleepovers + longshifts
+        }
     
-    shifts_df = pd.DataFrame(days_data)
-    
-    return staff, shifts_df, mapping_raw
+    return staff, day_info, mapping_raw
 
 def main():
     st.sidebar.title("🏢 Collins Avenue")
@@ -145,73 +127,124 @@ def main():
         st.session_state['user'] = None
         st.rerun()
     
-    staff_df, shifts_df, mapping_raw = load_roster_data()
+    staff_df, day_info, mapping_raw = load_roster_data()
     
     st.title("📋 Collins Avenue Roster - July 2026")
     
     if user['role'] == 'staff':
         st.info(f"👤 Your personal view: {user['name']}")
-        shifts_filtered = shifts_df[shifts_df['staff'] == user['name']]
+        
+        # Encontrar todos los días que trabaja este staff
+        my_days = []
+        for day, info in day_info.items():
+            if user['name'] in info['all_staff']:
+                # Determinar qué tipo de turno tiene
+                shift_type = None
+                if user['name'] in info['sleepovers']:
+                    shift_type = 'Sleepover'
+                elif user['name'] in info['longshifts']:
+                    shift_type = 'Longshift'
+                
+                my_days.append({
+                    'date': day,
+                    'shift_type': shift_type,
+                    'sleepovers': info['sleepovers'],
+                    'longshifts': info['longshifts'],
+                    'status': info['status'],
+                    'all_staff': info['all_staff']
+                })
+        
+        # Ordenar por día
+        my_days = sorted(my_days, key=lambda x: int(x['date'].split()[1]))
+        
+        # Separar sleepovers y longshifts
+        sleepovers = [d for d in my_days if d['shift_type'] == 'Sleepover']
+        longshifts = [d for d in my_days if d['shift_type'] == 'Longshift']
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("😴 Sleepovers")
-            sleepovers = shifts_filtered[shifts_filtered['shift_type'] == 'Sleepover']
-            if not sleepovers.empty:
-                for _, row in sleepovers.iterrows():
-                    emoji = "✅" if row['status'] == 'Match' else "⚠️"
-                    st.write(f"{emoji} **{row['date']}**: {row['status']}")
-                    st.write(f"   👥 Con: {row['coworkers']}")
-                    st.write("---")
+            st.subheader("😴 Sleepovers (2 Required)")
+            if sleepovers:
+                for day in sleepovers:
+                    emoji = "✅" if day['status'] == 'Match' else "⚠️"
+                    st.markdown(f"""
+                    <div style='background: #e3f2fd; padding: 10px; border-radius: 8px; margin: 8px 0; border-left: 4px solid #1976d2;'>
+                        <b>{emoji} {day['date']}</b><br>
+                        <b>Sleepovers:</b> {', '.join(day['sleepovers'])}<br>
+                        <b>Longshift:</b> {', '.join(day['longshifts']) if day['longshifts'] else 'None'}<br>
+                        <b>Status:</b> {day['status']}
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.write("No sleepovers assigned")
         
         with col2:
-            st.subheader("⭐ Longshifts")
-            longshifts = shifts_filtered[shifts_filtered['shift_type'] == 'Longshift']
-            if not longshifts.empty:
-                for _, row in longshifts.iterrows():
-                    emoji = "✅" if row['status'] == 'Match' else "⚠️"
-                    st.write(f"{emoji} **{row['date']}**: {row['status']}")
-                    st.write(f"   👥 Con: {row['coworkers']}")
-                    st.write("---")
+            st.subheader("⭐ Longshifts (1 Required)")
+            if longshifts:
+                for day in longshifts:
+                    emoji = "✅" if day['status'] == 'Match' else "⚠️"
+                    st.markdown(f"""
+                    <div style='background: #fce4ec; padding: 10px; border-radius: 8px; margin: 8px 0; border-left: 4px solid #c62828;'>
+                        <b>{emoji} {day['date']}</b><br>
+                        <b>Sleepovers:</b> {', '.join(day['sleepovers'])}<br>
+                        <b>Longshift:</b> {', '.join(day['longshifts']) if day['longshifts'] else 'None'}<br>
+                        <b>Status:</b> {day['status']}
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.write("No longshifts assigned")
         
         # Resumen de compañeros
         st.subheader("🤝 Todos tus compañeros de turno")
         all_coworkers = set()
-        for _, row in shifts_filtered.iterrows():
-            if row['coworkers'] != 'Solo':
-                for c in row['coworkers'].split(', '):
-                    all_coworkers.add(c)
+        for day in my_days:
+            for s in day['all_staff']:
+                if s != user['name']:
+                    all_coworkers.add(s)
         
         if all_coworkers:
-            st.write("Trabajas con: " + ", ".join(sorted(all_coworkers)))
+            st.success("Trabajas con: " + ", ".join(sorted(all_coworkers)))
         else:
-            st.write("Trabajas solo")
+            st.info("Trabajas solo")
     
     else:
-        # Admin view
+        # Admin view - Roster completo
         st.success("👥 Admin view - Full roster")
         
-        st.subheader("📋 Complete Roster with Coworkers")
-        st.dataframe(shifts_df, use_container_width=True)
-        
         # Mostrar el mapeo completo
-        st.subheader("📅 Daily Coverage Mapping")
-        for day, sleepovers, longshifts, status in mapping_raw:
-            with st.expander(f"{day} - {status}"):
+        st.subheader("📅 Daily Coverage Mapping - Complete Roster")
+        for day, info in day_info.items():
+            emoji = "✅" if info['status'] == 'Match' else "⚠️"
+            with st.expander(f"{emoji} {day} - {info['status']}"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.write("**😴 Sleepovers:**")
-                    for s in sleepovers:
+                    st.write("**😴 Sleepovers (2 Required):**")
+                    for s in info['sleepovers']:
                         st.write(f"- {s}")
+                    if len(info['sleepovers']) < 2:
+                        st.warning(f"⚠️ Need {2 - len(info['sleepovers'])} more sleepover(s)")
+                
                 with col2:
-                    st.write("**⭐ Longshifts:**")
-                    for s in longshifts:
-                        st.write(f"- {s}")
+                    st.write("**⭐ Longshift (1 Required):**")
+                    if info['longshifts']:
+                        for s in info['longshifts']:
+                            st.write(f"- {s}")
+                    else:
+                        st.warning("⚠️ No longshift assigned")
+                        st.write("**Need 1 longshift!**")
+        
+        # Estadísticas
+        st.subheader("📊 Roster Statistics")
+        total_days = len(day_info)
+        match_days = sum(1 for d in day_info.values() if d['status'] == 'Match')
+        relief_days = total_days - match_days
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Days", total_days)
+        col2.metric("Match", match_days)
+        col3.metric("Relief Needed", relief_days)
+        col4.metric("Coverage Rate", f"{match_days/total_days:.1%}")
 
 if __name__ == "__main__":
     main()
