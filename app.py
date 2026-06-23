@@ -48,7 +48,6 @@ def load_roster_data():
         'role': ['SCL', 'SCW', 'DSW', 'DSW', 'SMH', 'SMH', 'Xpress', 'Emerald']
     })
     
-    # MAPEO COMPLETO CON TODOS LOS STAFF
     mapping_raw = [
         ('Wed 01', ['John G.'], ['Paul F.'], 'Relief needed'),
         ('Thu 02', ['Martin T.', 'Igor D.'], ['Vlad R.'], 'Match'),
@@ -83,7 +82,6 @@ def load_roster_data():
         ('Fri 31', ['Martin T.'], ['Paul F.'], 'Relief needed')
     ]
     
-    # Crear diccionario para búsqueda rápida
     day_info = {}
     for day, sleepovers, longshifts, status in mapping_raw:
         day_info[day] = {
@@ -134,11 +132,9 @@ def main():
     if user['role'] == 'staff':
         st.info(f"👤 Your personal view: {user['name']}")
         
-        # Encontrar todos los días que trabaja este staff
         my_days = []
         for day, info in day_info.items():
             if user['name'] in info['all_staff']:
-                # Determinar qué tipo de turno tiene
                 shift_type = None
                 if user['name'] in info['sleepovers']:
                     shift_type = 'Sleepover'
@@ -154,10 +150,8 @@ def main():
                     'all_staff': info['all_staff']
                 })
         
-        # Ordenar por día
         my_days = sorted(my_days, key=lambda x: int(x['date'].split()[1]))
         
-        # Separar sleepovers y longshifts
         sleepovers = [d for d in my_days if d['shift_type'] == 'Sleepover']
         longshifts = [d for d in my_days if d['shift_type'] == 'Longshift']
         
@@ -195,8 +189,7 @@ def main():
             else:
                 st.write("No longshifts assigned")
         
-        # Resumen de compañeros
-        st.subheader("🤝 Todos tus compañeros de turno")
+        st.subheader("🤝 All your colleagues")
         all_coworkers = set()
         for day in my_days:
             for s in day['all_staff']:
@@ -204,15 +197,13 @@ def main():
                     all_coworkers.add(s)
         
         if all_coworkers:
-            st.success("Trabajas con: " + ", ".join(sorted(all_coworkers)))
+            st.success("You work with: " + ", ".join(sorted(all_coworkers)))
         else:
-            st.info("Trabajas solo")
+            st.info("You work alone")
     
     else:
-        # Admin view - Roster completo
         st.success("👥 Admin view - Full roster")
         
-        # Mostrar el mapeo completo
         st.subheader("📅 Daily Coverage Mapping - Complete Roster")
         for day, info in day_info.items():
             emoji = "✅" if info['status'] == 'Match' else "⚠️"
@@ -234,7 +225,6 @@ def main():
                         st.warning("⚠️ No longshift assigned")
                         st.write("**Need 1 longshift!**")
         
-        # Estadísticas
         st.subheader("📊 Roster Statistics")
         total_days = len(day_info)
         match_days = sum(1 for d in day_info.values() if d['status'] == 'Match')
