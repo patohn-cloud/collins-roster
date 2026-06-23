@@ -48,6 +48,7 @@ def load_roster_data():
         'role': ['SCL', 'SCW', 'DSW', 'DSW', 'SMH', 'SMH', 'Xpress', 'Emerald']
     })
     
+    # MAPEO COMPLETO CON TODOS LOS STAFF
     mapping_raw = [
         ('Wed 01', ['John G.'], ['Paul F.'], 'Relief needed'),
         ('Thu 02', ['Martin T.', 'Igor D.'], ['Vlad R.'], 'Match'),
@@ -84,78 +85,33 @@ def load_roster_data():
     
     days_data = []
     for day, sleepovers, longshifts, status in mapping_raw:
+        # Sleepovers
         for staff_name in sleepovers:
+            # Encontrar con quién trabaja (otros sleepovers + longshifts)
+            coworkers = [s for s in sleepovers if s != staff_name] + longshifts
             days_data.append({
                 'date': day,
                 'day_num': int(day.split()[1]),
                 'staff': staff_name,
                 'shift_type': 'Sleepover',
-                'status': status
+                'status': status,
+                'coworkers': ', '.join(coworkers) if coworkers else 'Solo'
             })
+        # Longshifts
         for staff_name in longshifts:
+            coworkers = sleepovers + [s for s in longshifts if s != staff_name]
             days_data.append({
                 'date': day,
                 'day_num': int(day.split()[1]),
                 'staff': staff_name,
                 'shift_type': 'Longshift',
-                'status': status
+                'status': status,
+                'coworkers': ', '.join(coworkers) if coworkers else 'Solo'
             })
     
     shifts_df = pd.DataFrame(days_data)
     
-    coverage_matrix = {}
-    for day, sleepovers, longshifts, status in mapping_raw:
-        all_staff = sleepovers + longshifts
-        coverage_matrix[day] = {
-            'date': day,
-            'sleepovers': sleepovers,
-            'longshifts': longshifts,
-            'all_staff': all_staff,
-            'pairs': list(combinations(all_staff, 2)) if len(all_staff) >= 2 else [],
-            'status': status
-        }
-    
-    return staff, shifts_df, coverage_matrix, mapping_raw
-
-class RosterML:
-    def __init__(self):
-        self.model = None
-        self.label_encoders = {}
-        self.feature_columns = None
-        
-    def train(self, df):
-        df = df.copy()
-        df['is_sleepover'] = (df['shift_type'] == 'Sleepover').astype(int)
-        df['is_relief'] = (df['status'] == 'Relief needed').astype(int)
-        
-        le = LabelEncoder()
-        df['staff_encoded'] = le.fit_transform(df['staff'])
-        self.label_encoders['staff'] = le
-        
-        features = ['day_num', 'is_sleepover', 'is_relief', 'staff_encoded']
-        self.feature_columns = features
-        
-        X = df[features]
-        y = (df['status'] == 'Match').astype(int)
-        
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        self.model = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42)
-        self.model.fit(X_train, y_train)
-        
-        y_pred = self.model.predict(X_test)
-        
-        metrics = {
-            'accuracy': accuracy_score(y_test, y_pred),
-            'f1_score': f1_score(y_test, y_pred),
-            'report': classification_report(y_test, y_pred, output_dict=True)
-        }
-        
-        os.makedirs('models', exist_ok=True)
-        with open('models/roster_model.pkl', 'wb') as f:
-            pickle.dump(self, f)
-        
-        return metrics
+    return staff, shifts_df, mapping_raw
 
 def main():
     st.sidebar.title("🏢 Collins Avenue")
@@ -189,7 +145,7 @@ def main():
         st.session_state['user'] = None
         st.rerun()
     
-    staff_df, shifts_df, coverage_matrix, mapping_raw = load_roster_data()
+    staff_df, shifts_df, mapping_raw = load_roster_data()
     
     st.title("📋 Collins Avenue Roster - July 2026")
     
@@ -198,50 +154,64 @@ def main():
         shifts_filtered = shifts_df[shifts_df['staff'] == user['name']]
         
         col1, col2 = st.columns(2)
+        
         with col1:
             st.subheader("😴 Sleepovers")
             sleepovers = shifts_filtered[shifts_filtered['shift_type'] == 'Sleepover']
-            for _, row in sleepovers.iterrows():
-                emoji = "✅" if row['status'] == 'Match' else "⚠️"
-                st.write(f"{emoji} {row['date']}: {row['status']}")
+            if not sleepovers.empty:
+                for _, row in sleepovers.iterrows():
+                    emoji = "✅" if row['status'] == 'Match' else "⚠️"
+                    st.write(f"{emoji} **{row['date']}**: {row['status']}")
+                    st.write(f"   👥 Con: {row['coworkers']}")
+                    st.write("---")
+            else:
+                st.write("No sleepovers assigned")
         
         with col2:
             st.subheader("⭐ Longshifts")
             longshifts = shifts_filtered[shifts_filtered['shift_type'] == 'Longshift']
-            for _, row in longshifts.iterrows():
-                emoji = "✅" if row['status'] == 'Match' else "⚠️"
-                st.write(f"{emoji} {row['date']}: {row['status']}")
+            if not longshifts.empty:
+                for _, row in longshifts.iterrows():
+                    emoji = "✅" if row['status'] == 'Match' else "⚠️"
+                    st.write(f"{emoji} **{row['date']}**: {row['status']}")
+                    st.write(f"   👥 Con: {row['coworkers']}")
+                    st.write("---")
+            else:
+                st.write("No longshifts assigned")
         
-        colleagues = set()
-        for _, shift in shifts_filtered.iterrows():
-            day_data = coverage_matrix.get(shift['date'], {})
-            colleagues.update([s for s in day_data.get('all_staff', []) if s != user['name']])
+        # Resumen de compañeros
+        st.subheader("🤝 Todos tus compañeros de turno")
+        all_coworkers = set()
+        for _, row in shifts_filtered.iterrows():
+            if row['coworkers'] != 'Solo':
+                for c in row['coworkers'].split(', '):
+                    all_coworkers.add(c)
         
-        if colleagues:
-            st.subheader("🤝 Your colleagues")
-            st.write(", ".join(sorted(colleagues)))
+        if all_coworkers:
+            st.write("Trabajas con: " + ", ".join(sorted(all_coworkers)))
+        else:
+            st.write("Trabajas solo")
     
     else:
+        # Admin view
         st.success("👥 Admin view - Full roster")
         
-        st.subheader("All Staff Shifts")
-        pivot_df = shifts_df.pivot_table(
-            index='staff',
-            columns='date',
-            values='shift_type',
-            aggfunc='first',
-            fill_value='-'
-        )
-        st.dataframe(pivot_df)
+        st.subheader("📋 Complete Roster with Coworkers")
+        st.dataframe(shifts_df, use_container_width=True)
         
-        if st.button("Train ML Model"):
-            ml = RosterML()
-            with st.spinner("Training..."):
-                metrics = ml.train(shifts_df)
-                st.success("Model trained!")
+        # Mostrar el mapeo completo
+        st.subheader("📅 Daily Coverage Mapping")
+        for day, sleepovers, longshifts, status in mapping_raw:
+            with st.expander(f"{day} - {status}"):
                 col1, col2 = st.columns(2)
-                col1.metric("Accuracy", f"{metrics['accuracy']:.2%}")
-                col2.metric("F1 Score", f"{metrics['f1_score']:.2%}")
+                with col1:
+                    st.write("**😴 Sleepovers:**")
+                    for s in sleepovers:
+                        st.write(f"- {s}")
+                with col2:
+                    st.write("**⭐ Longshifts:**")
+                    for s in longshifts:
+                        st.write(f"- {s}")
 
 if __name__ == "__main__":
     main()
