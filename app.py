@@ -1,39 +1,3 @@
-import pandas as pd
-import numpy as np
-import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
-import hashlib
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, classification_report
-from sklearn.preprocessing import LabelEncoder
-import pickle
-import os
-from itertools import combinations
-
-st.set_page_config(page_title="Collins Avenue Roster", page_icon="📋", layout="wide")
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def load_credentials():
-    try:
-        return pd.read_csv('data/credentials.csv')
-    except:
-        creds = {
-            'name': ['Paul F.', 'Damien F.', 'John G.', 'Davor A.', 'Admin'],
-            'password': [hash_password('paul123'), hash_password('damien123'),
-                        hash_password('john123'), hash_password('davor123'),
-                        hash_password('admin123')],
-            'role': ['staff', 'staff', 'staff', 'staff', 'admin']
-        }
-        df = pd.DataFrame(creds)
-        os.makedirs('data', exist_ok=True)
-        df.to_csv('data/credentials.csv', index=False)
-        return df
-
-def authenticate(username, password):
     creds = load_credentials()
     hashed = hash_password(password)
     user = creds[creds['name'].str.lower() == username.lower()]
